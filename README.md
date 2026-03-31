@@ -109,7 +109,7 @@ The SDK ships as both CommonJS and ESModule:
 
 ### Step 1: Get your credentials
 
-Log in to the [Apperio dashboard](https://loghive.vercel.app). Create a project. Copy your **API Key** and **Project ID** from the project settings page.
+Log in to the [Apperio dashboard](https://www.apperio.dev). Create a project. Copy your **API Key** and **Project ID** from the project settings page.
 
 ### Step 2: Initialize the logger
 
