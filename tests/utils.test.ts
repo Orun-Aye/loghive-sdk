@@ -17,6 +17,8 @@ import {
   getTimestamp,
   safeStringify,
   isValidUUID,
+  generateUUID,
+  getSessionId,
   truncateString,
   debounce,
 } from "../src/utils";
@@ -524,6 +526,31 @@ describe("Utils", () => {
       debouncedFn();
       vi.advanceTimersByTime(100);
       expect(fn).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("generateUUID", () => {
+    it("should generate a valid UUID v4", () => {
+      expect(isValidUUID(generateUUID())).toBe(true);
+    });
+
+    it("should generate a different value each call", () => {
+      const ids = new Set(Array.from({ length: 50 }, () => generateUUID()));
+      expect(ids.size).toBe(50);
+    });
+  });
+
+  describe("getSessionId", () => {
+    it("should return a valid UUID", () => {
+      expect(isValidUUID(getSessionId())).toBe(true);
+    });
+
+    it("should return the same id for the lifetime of the module", () => {
+      expect(getSessionId()).toBe(getSessionId());
+    });
+
+    it("should never return an empty string", () => {
+      expect(getSessionId().length).toBeGreaterThan(0);
     });
   });
 });

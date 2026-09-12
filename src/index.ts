@@ -12,6 +12,12 @@ export {
   NetworkRequest
 } from './types';
 export { AutoInstrumentation } from './auto-instrumentation';
+
+/**
+ * Session ID for the current page load. Useful for correlating your own
+ * analytics with Apperio sessions. See the README for its lifetime.
+ */
+export { getSessionId } from './utils';
 export {
   DataSanitizer,
   createDataSanitizer,

@@ -94,6 +94,8 @@ export interface LogEntry {
   userAgent?: string;
   url?: string;
   referrer?: string;
+  /** Session ID for the current page load. Groups every log from one visit. */
+  sessionId?: string;
   /** Distributed trace ID, set when tracing is active. */
   traceId?: string;
   /** Distributed span ID, set when tracing is active. */

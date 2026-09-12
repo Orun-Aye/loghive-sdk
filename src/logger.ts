@@ -1,6 +1,6 @@
 // src/logger.ts
 import { LoggerConfig, LogEntry, LogLevel } from './types';
-import { delay, getExponentialBackoffDelay, shouldLog, extractErrorDetails, isInBrowser } from './utils';
+import { delay, getExponentialBackoffDelay, shouldLog, extractErrorDetails, isInBrowser, getSessionId } from './utils';
 import { AutoInstrumentation } from './auto-instrumentation';
 import { DataSanitizer, SanitizationConfig, createDataSanitizer, SANITIZATION_PRESETS } from './data-sanitizer';
 import { OfflineManager } from './offline-manager';
@@ -237,6 +237,7 @@ export class Apperio {
       service: this._config.serviceName,
       environment: this._config.environment,
       context: { ...this._context },
+      sessionId: getSessionId(),
     };
 
     // Extract eventType from data to top-level field for backend indexing
@@ -320,6 +321,7 @@ export class Apperio {
           environment: this._config.environment,
           eventType: 'message',
           context: { ...this._context },
+          sessionId: getSessionId(),
         };
         this._logBuffer.push(patternEntry);
       }

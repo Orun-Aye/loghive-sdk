@@ -232,7 +232,7 @@ export class DataSanitizer {
           processedSize: this.calculateSize(sanitizedEntry),
           rulesApplied,
           userId: logEntry.context?.userId,
-          sessionId: logEntry.context?.sessionId,
+          sessionId: logEntry.sessionId ?? logEntry.context?.sessionId,
           metadata: {
             processingTime: Date.now() - startTime,
             rulesCount: rulesApplied.length
@@ -254,7 +254,7 @@ export class DataSanitizer {
           processedSize: originalSize,
           rulesApplied: ['ERROR'],
           userId: logEntry.context?.userId,
-          sessionId: logEntry.context?.sessionId,
+          sessionId: logEntry.sessionId ?? logEntry.context?.sessionId,
           metadata: { error: error instanceof Error ? error.message : String(error) }
         });
       }

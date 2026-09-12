@@ -1154,6 +1154,55 @@ All original functions are restored when `shutdown()` is called.
 
 ---
 
+## Running the browser example
+
+A small multi-page app that exercises the SDK against your own backend. Use it to see what actually goes over the wire before you wire the SDK into a real project.
+
+```bash
+npm run example:browser      # builds the SDK, then serves on :8080
+```
+
+Open http://localhost:8080 and paste an API key and project ID from the dashboard. They are stored in your browser and never leave it. The endpoint defaults to `http://localhost:5000/api/v1`, so point it at a local backend rather than production.
+
+What you get:
+
+- **Three real pages** (Home, Checkout, Docs). Navigation is a full page load, not a client-side route, so each one starts a new session.
+- **A wire inspector** down the right-hand side showing the exact JSON the SDK POSTs, captured before it leaves the page, with the top-level `sessionId` highlighted.
+- **Buttons for every capture path**: manual logs, caught errors, uncaught errors, unhandled rejections, failing requests, `console.error`, and a checkout form with an email, a card number, and a password so you can watch sanitization work.
+- **A session chip** in the nav. Reload and watch it change.
+
+The pages import the SDK from your `dist/` build, so a rebuild is reflected on the next reload. `example/browser/serve.mjs` has no dependencies.
+
+---
+
+## Sessions
+
+Every log carries a top-level `sessionId` that groups all activity from one visit. It powers the Sessions view in the dashboard and the "users affected" count on error groups. You do not configure it: the SDK generates one automatically.
+
+```json
+{
+  "level": "error",
+  "message": "Checkout failed",
+  "sessionId": "20208d53-f885-45d7-9f68-a2acb540d3d7"
+}
+```
+
+### Known limitation: sessions do not survive a page reload
+
+The session ID lives in memory only. The SDK deliberately uses no `localStorage`, `sessionStorage`, or cookies, so there is nowhere to persist it across document loads.
+
+What that means in practice:
+
+| Navigation | Session ID |
+|------------|-----------|
+| Route change in a single-page app | Unchanged |
+| Full page reload or hard navigation | New session |
+| New tab | New session |
+
+So one person browsing a multi-page site produces several sessions rather than one. Session counts read high and per-session activity reads short. This is accepted for v1. Persisting the ID would require a storage API the SDK does not use.
+
+---
+
 ## Troubleshooting
 
 ### "Apperio: API Key is required"

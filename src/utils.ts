@@ -233,6 +233,45 @@ export function safeStringify(obj: any, space?: number): string {
 }
 
 /**
+ * Generates a UUID v4 string.
+ * Uses crypto.randomUUID() when available, falls back to Math.random()-based generation.
+ */
+export function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+/**
+ * Session ID for the current page load.
+ *
+ * Held in memory only. The SDK never uses localStorage or sessionStorage, so a
+ * session does NOT survive a page load: a reload, or any navigation that
+ * reloads the document, starts a new session. Known limitation, accepted for
+ * v1. Single-page navigations keep the same session because the module stays
+ * loaded.
+ *
+ * Module-level rather than per-instance so that multiple Apperio instances on
+ * one page report the same session.
+ */
+let _sessionId: string | null = null;
+
+/**
+ * Returns the session ID for this page load, generating it on first use.
+ */
+export function getSessionId(): string {
+  if (_sessionId === null) {
+    _sessionId = generateUUID();
+  }
+  return _sessionId;
+}
+
+/**
  * Validates if a string is a valid UUID
  */
 export function isValidUUID(uuid: string): boolean {

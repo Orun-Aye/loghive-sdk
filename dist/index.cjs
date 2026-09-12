@@ -132,6 +132,23 @@ function safeStringify(obj, space) {
     return value;
   }, space);
 }
+function generateUUID() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    const v = c === "x" ? r : r & 3 | 8;
+    return v.toString(16);
+  });
+}
+var _sessionId = null;
+function getSessionId() {
+  if (_sessionId === null) {
+    _sessionId = generateUUID();
+  }
+  return _sessionId;
+}
 
 // src/breadcrumb-manager.ts
 var BreadcrumbManager = class {
@@ -963,7 +980,7 @@ var DataSanitizer = class {
           processedSize: this.calculateSize(sanitizedEntry),
           rulesApplied,
           userId: logEntry.context?.userId,
-          sessionId: logEntry.context?.sessionId,
+          sessionId: logEntry.sessionId ?? logEntry.context?.sessionId,
           metadata: {
             processingTime: Date.now() - startTime,
             rulesCount: rulesApplied.length
@@ -982,7 +999,7 @@ var DataSanitizer = class {
           processedSize: originalSize,
           rulesApplied: ["ERROR"],
           userId: logEntry.context?.userId,
-          sessionId: logEntry.context?.sessionId,
+          sessionId: logEntry.sessionId ?? logEntry.context?.sessionId,
           metadata: { error: error instanceof Error ? error.message : String(error) }
         });
       }
@@ -1514,7 +1531,7 @@ var RemoteConfigManager = class {
 };
 
 // src/tracing/span.ts
-function generateUUID() {
+function generateUUID2() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
   }
@@ -1533,7 +1550,7 @@ function getHighResTime() {
 var Span = class {
   constructor(name, traceId, parentSpanId) {
     this.data = {
-      spanId: generateUUID(),
+      spanId: generateUUID2(),
       traceId,
       parentSpanId,
       name,
@@ -1567,7 +1584,7 @@ var Span = class {
 };
 
 // src/tracing/trace-context.ts
-function generateUUID2() {
+function generateUUID3() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
   }
@@ -1588,8 +1605,8 @@ var TraceContextManager = class {
    * and stores it as the current trace context.
    */
   startTrace(name) {
-    const traceId = generateUUID2();
-    const spanId = generateUUID2();
+    const traceId = generateUUID3();
+    const spanId = generateUUID3();
     this.currentTrace = {
       traceId,
       spanId,
@@ -1939,7 +1956,8 @@ var _Apperio = class _Apperio {
       error: error ? extractErrorDetails(error) : void 0,
       service: this._config.serviceName,
       environment: this._config.environment,
-      context: { ...this._context }
+      context: { ...this._context },
+      sessionId: getSessionId()
     };
     if (data?.eventType) {
       logEntry.eventType = data.eventType;
@@ -1993,7 +2011,8 @@ var _Apperio = class _Apperio {
           service: this._config.serviceName,
           environment: this._config.environment,
           eventType: "message",
-          context: { ...this._context }
+          context: { ...this._context },
+          sessionId: getSessionId()
         };
         this._logBuffer.push(patternEntry);
       }
@@ -2836,6 +2855,7 @@ exports.TracePropagator = TracePropagator;
 exports.compressPayload = compressPayload;
 exports.createDataSanitizer = createDataSanitizer;
 exports.createLogger = createLogger;
+exports.getSessionId = getSessionId;
 exports.preparePayloadForTransmission = preparePayloadForTransmission;
 exports.uint8ArrayToBase64 = uint8ArrayToBase64;
 //# sourceMappingURL=index.cjs.map

@@ -235,6 +235,8 @@ interface LogEntry {
     userAgent?: string;
     url?: string;
     referrer?: string;
+    /** Session ID for the current page load. Groups every log from one visit. */
+    sessionId?: string;
     /** Distributed trace ID, set when tracing is active. */
     traceId?: string;
     /** Distributed span ID, set when tracing is active. */
@@ -592,6 +594,11 @@ declare class AutoInstrumentation {
     private getVitalRating;
     destroy(): void;
 }
+
+/**
+ * Returns the session ID for this page load, generating it on first use.
+ */
+declare function getSessionId(): string;
 
 /**
  * Circuit Breaker Pattern Implementation
@@ -963,4 +970,4 @@ declare class PatternDetector {
 
 declare const createLogger: (config: LoggerConfig) => Apperio;
 
-export { Apperio, type AuditEntry, AutoInstrumentation, type Breadcrumb, BreadcrumbManager, CircuitBreaker, type CircuitBreakerConfig, CircuitBreakerState, type CompressionResult, DataSanitizer, type DetectedPattern, type EnvironmentSnapshot, type HealthMetrics, HealthMetricsCollector, type LogEntry, LogLevel, type LoggerConfig, type NetworkRequest, OfflineManager, type OfflineManagerConfig, PII_PATTERNS, PatternDetector, type PerformanceEntry, RemoteConfigManager, type RemoteConfigOptions, type RemoteSDKConfig, type RetentionPolicy, SANITIZATION_PRESETS, type SanitizationConfig, type SanitizationRule, Span, type SpanData, type TraceContext, TraceContextManager, TracePropagator, type UserInteraction, compressPayload, createDataSanitizer, createLogger, preparePayloadForTransmission, uint8ArrayToBase64 };
+export { Apperio, type AuditEntry, AutoInstrumentation, type Breadcrumb, BreadcrumbManager, CircuitBreaker, type CircuitBreakerConfig, CircuitBreakerState, type CompressionResult, DataSanitizer, type DetectedPattern, type EnvironmentSnapshot, type HealthMetrics, HealthMetricsCollector, type LogEntry, LogLevel, type LoggerConfig, type NetworkRequest, OfflineManager, type OfflineManagerConfig, PII_PATTERNS, PatternDetector, type PerformanceEntry, RemoteConfigManager, type RemoteConfigOptions, type RemoteSDKConfig, type RetentionPolicy, SANITIZATION_PRESETS, type SanitizationConfig, type SanitizationRule, Span, type SpanData, type TraceContext, TraceContextManager, TracePropagator, type UserInteraction, compressPayload, createDataSanitizer, createLogger, getSessionId, preparePayloadForTransmission, uint8ArrayToBase64 };
