@@ -20,6 +20,7 @@
   "scripts": {
     "build": "tsup",
     "build:watch": "tsup --watch",
+    "prepare": "npm run build",
     "start:example": "ts-node example/data-sanitization-example.ts",
     "test": "vitest run",
     "test:watch": "vitest",
