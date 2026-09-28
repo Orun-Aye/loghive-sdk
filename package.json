@@ -36,7 +36,11 @@
     "dist/index.mjs",
     "dist/index.mjs.map",
     "dist/index.d.ts",
-    "dist/index.d.mts"
+    "dist/index.d.mts",
+    "dist/replay-recorder.cjs",
+    "dist/replay-recorder.cjs.map",
+    "dist/replay-recorder.mjs",
+    "dist/replay-recorder.mjs.map"
   ],
   "keywords": [
     "logger",
@@ -72,6 +76,7 @@
     "vitest": "^4.0.18"
   },
   "dependencies": {
-    "dotenv": "^17.2.1"
+    "dotenv": "^17.2.1",
+    "rrweb": "^2.1.6"
   }
 }

@@ -1,12 +1,13 @@
 // src/logger.ts
 import { LoggerConfig, LogEntry, LogLevel } from './types';
-import { delay, getExponentialBackoffDelay, shouldLog, extractErrorDetails, isInBrowser, getSessionId } from './utils';
+import { delay, getExponentialBackoffDelay, shouldLog, extractErrorDetails, isInBrowser, getSessionId, isSessionSampled, nextReplaySegmentIndex } from './utils';
 import { AutoInstrumentation } from './auto-instrumentation';
 import { DataSanitizer, SanitizationConfig, createDataSanitizer, SANITIZATION_PRESETS } from './data-sanitizer';
 import { OfflineManager } from './offline-manager';
 import { RemoteConfigManager, RemoteSDKConfig } from './remote-config';
 import { TraceContextManager, TraceContext } from './tracing/trace-context';
 import { Span } from './tracing/span';
+import type { ReplayRecorder } from './replay-recorder';
 import { PatternDetector } from './pattern-detector';
 
 export class Apperio {
@@ -27,6 +28,11 @@ export class Apperio {
   private _remoteConfigManager: RemoteConfigManager | null = null;
   private _traceContextManager: TraceContextManager | null = null;
   private _patternDetector: PatternDetector | null = null;
+  private _replayRecorder: ReplayRecorder | null = null;
+  /** Bumped on shutdown so a recorder that finishes loading late is discarded */
+  private _replayGeneration: number = 0;
+  /** Replay options exactly as the app passed them, before defaults */
+  private _codeReplay: LoggerConfig['replay'];
   private _lastTimestamp: string = '';
   private _timestampCounter: number = 0;
 
@@ -67,9 +73,16 @@ export class Apperio {
         autoTraceNetworkRequests: false,
         ...(config.tracing || {}),
       },
+      replay: {
+        enabled: false,
+        sampleRate: 0.1,
+        ...(config.replay || {}),
+      },
       enablePatternDetection: config.enablePatternDetection !== false,
       onPatternDetected: config.onPatternDetected || undefined,
     } as Required<LoggerConfig>;
+
+    this._codeReplay = config.replay;
 
     // Validate required configuration
     if (!this._config.apiKey) {
@@ -173,6 +186,16 @@ export class Apperio {
     // --- Phase 3: Pattern Detection ---
     if (this._config.enablePatternDetection) {
       this._patternDetector = new PatternDetector();
+    }
+
+    // --- Session Replay ---
+    // A decision made in code wins; otherwise follow the dashboard setting
+    if (isInBrowser()) {
+      if (this._codeReplay?.enabled === undefined) {
+        this._followDashboardReplaySetting();
+      } else if (this._config.replay?.enabled && isSessionSampled(this._config.replay.sampleRate)) {
+        this._startReplay();
+      }
     }
 
     // --- Phase 2: Remote Configuration ---
@@ -550,8 +573,71 @@ export class Apperio {
     }
   }
 
+  /**
+   * Ask the backend whether the project has replay turned on in the
+   * dashboard. The response is browser-cached for 5 minutes, so this is
+   * usually free after the first page load. A sampleRate set in code wins.
+   */
+  private _followDashboardReplaySetting(): void {
+    const generation = this._replayGeneration;
+    fetch(`${this._config.endpoint}/sdk-config`, {
+      headers: { 'X-API-Key': this._config.apiKey, Accept: 'application/json' },
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body) => {
+        const remote = body?.data?.replay;
+        if (!remote?.enabled || generation !== this._replayGeneration) return;
+        const sampleRate = this._codeReplay?.sampleRate ?? remote.sampleRate;
+        if (isSessionSampled(sampleRate)) this._startReplay();
+      })
+      .catch(() => {
+        // No answer means no replay: fail closed
+      });
+  }
+
+  /**
+   * Load the recorder chunk (and rrweb) on demand. It is a dynamic import so
+   * bundlers split it out: sessions without replay never download it.
+   */
+  private _startReplay(): void {
+    const generation = this._replayGeneration;
+    import('./replay-recorder')
+      .then(async ({ ReplayRecorder }) => {
+        if (generation !== this._replayGeneration) return;
+        const recorder = new ReplayRecorder({
+          maskAllInputs: this._config.replay.maskAllInputs,
+          transport: {
+            url: `${this._config.endpoint}/${this._config.projectId}/replay`,
+            headers: this._headers,
+            getSessionId,
+            nextSegmentIndex: nextReplaySegmentIndex,
+          },
+        });
+        await recorder.start();
+        if (generation !== this._replayGeneration) {
+          recorder.stop();
+          return;
+        }
+        this._replayRecorder = recorder;
+      })
+      .catch((error) => {
+        console.warn('Apperio: Session replay failed to start.', error);
+      });
+  }
+
+  /** True once the replay recorder has loaded and is recording */
+  public isReplayRecording(): boolean {
+    return this._replayRecorder?.isRecording ?? false;
+  }
+
   public async shutdown(): Promise<void> {
     this._isShuttingDown = true;
+
+    this._replayGeneration++;
+    if (this._replayRecorder) {
+      this._replayRecorder.stop();
+      this._replayRecorder = null;
+    }
 
     if (this._flushTimer) {
       clearInterval(this._flushTimer);

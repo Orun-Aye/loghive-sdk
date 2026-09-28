@@ -3,7 +3,8 @@
  *
  * Serves the example pages and mounts the built SDK at /sdk, so the pages can
  * `import { Apperio } from "/sdk/index.mjs"` against your working tree instead
- * of an npm install. Run `npm run build` first.
+ * of an npm install. rrweb (session replay) is served at /vendor/rrweb.
+ * Run `npm run build` first.
  *
  *   node example/browser/serve.mjs [port]
  *
@@ -17,6 +18,9 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DIST = resolve(HERE, "../../dist");
+// rrweb for session replay. Its ESM build has no imports of its own, so the
+// pages map the bare "rrweb" specifier here with an import map.
+const RRWEB = resolve(HERE, "../../node_modules/rrweb/dist");
 const PORT = Number(process.argv[2]) || 8080;
 
 const MIME = {
@@ -56,6 +60,12 @@ const server = createServer(async (req, res) => {
     // The built SDK, served straight out of dist/ (including split chunks).
     if (urlPath.startsWith("/sdk/")) {
       const file = safeJoin(DIST, urlPath.slice("/sdk".length));
+      if (!file) return res.writeHead(403).end("Forbidden");
+      return await send(res, file);
+    }
+
+    if (urlPath.startsWith("/vendor/rrweb/")) {
+      const file = safeJoin(RRWEB, urlPath.slice("/vendor/rrweb".length));
       if (!file) return res.writeHead(403).end("Forbidden");
       return await send(res, file);
     }

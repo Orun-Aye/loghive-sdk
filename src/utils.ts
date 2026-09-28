@@ -271,6 +271,33 @@ export function getSessionId(): string {
   return _sessionId;
 }
 
+/** Replay segments sent so far this session, shared like the session ID */
+let _replaySegmentCount = 0;
+
+/**
+ * Next replay segment index for this session. Module-level so a logger that
+ * is shut down and re-initialized on the same page keeps counting instead of
+ * overwriting segment 0.
+ */
+export function nextReplaySegmentIndex(): number {
+  return _replaySegmentCount++;
+}
+
+/** One random draw per session, shared like the session ID */
+let _sessionSampleRoll: number | null = null;
+
+/**
+ * Whether this session falls inside a sample rate (0 to 1). The draw is made
+ * once per session, so re-initializing the logger never flips the decision.
+ */
+export function isSessionSampled(sampleRate: number | undefined): boolean {
+  if (_sessionSampleRoll === null) {
+    _sessionSampleRoll = Math.random();
+  }
+  const rate = typeof sampleRate === 'number' && !Number.isNaN(sampleRate) ? sampleRate : 0;
+  return _sessionSampleRoll < Math.min(Math.max(rate, 0), 1);
+}
+
 /**
  * Validates if a string is a valid UUID
  */

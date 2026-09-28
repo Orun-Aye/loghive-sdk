@@ -139,11 +139,19 @@ export class AutoInstrumentation {
       return;
     }
 
+    const sdkEndpoint = this.logger.getEndpoint();
+
     try {
       this.performanceObserver = new PerformanceObserver((list) => {
         const entries = list.getEntries();
 
         entries.forEach((entry) => {
+          // Skip the SDK's own uploads (logs, replay segments). Each one would
+          // otherwise be logged, and that log uploaded, in an endless loop.
+          if (entry.entryType === "resource" && entry.name.startsWith(sdkEndpoint)) {
+            return;
+          }
+
           const perfEntry: PerformanceEntry = {
             name: entry.name,
             type: entry.entryType,

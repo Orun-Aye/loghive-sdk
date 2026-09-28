@@ -147,6 +147,18 @@ function getSessionId() {
   }
   return _sessionId;
 }
+var _replaySegmentCount = 0;
+function nextReplaySegmentIndex() {
+  return _replaySegmentCount++;
+}
+var _sessionSampleRoll = null;
+function isSessionSampled(sampleRate) {
+  if (_sessionSampleRoll === null) {
+    _sessionSampleRoll = Math.random();
+  }
+  const rate = typeof sampleRate === "number" && !Number.isNaN(sampleRate) ? sampleRate : 0;
+  return _sessionSampleRoll < Math.min(Math.max(rate, 0), 1);
+}
 
 // src/breadcrumb-manager.ts
 var BreadcrumbManager = class {
@@ -288,10 +300,14 @@ var AutoInstrumentation = class {
       console.warn("AutoInstrumentation: PerformanceObserver not supported");
       return;
     }
+    const sdkEndpoint = this.logger.getEndpoint();
     try {
       this.performanceObserver = new PerformanceObserver((list) => {
         const entries = list.getEntries();
         entries.forEach((entry) => {
+          if (entry.entryType === "resource" && entry.name.startsWith(sdkEndpoint)) {
+            return;
+          }
           const perfEntry = {
             name: entry.name,
             type: entry.entryType,
@@ -1791,6 +1807,9 @@ var _Apperio = class _Apperio {
     this._remoteConfigManager = null;
     this._traceContextManager = null;
     this._patternDetector = null;
+    this._replayRecorder = null;
+    /** Bumped on shutdown so a recorder that finishes loading late is discarded */
+    this._replayGeneration = 0;
     this._lastTimestamp = "";
     this._timestampCounter = 0;
     this._config = {
@@ -1828,9 +1847,15 @@ var _Apperio = class _Apperio {
         autoTraceNetworkRequests: false,
         ...config.tracing || {}
       },
+      replay: {
+        enabled: false,
+        sampleRate: 0.1,
+        ...config.replay || {}
+      },
       enablePatternDetection: config.enablePatternDetection !== false,
       onPatternDetected: config.onPatternDetected || void 0
     };
+    this._codeReplay = config.replay;
     if (!this._config.apiKey) {
       throw new Error("Apperio: API Key is required.");
     }
@@ -1902,6 +1927,13 @@ var _Apperio = class _Apperio {
     }
     if (this._config.enablePatternDetection) {
       this._patternDetector = new PatternDetector();
+    }
+    if (isInBrowser()) {
+      if (this._codeReplay?.enabled === void 0) {
+        this._followDashboardReplaySetting();
+      } else if (this._config.replay?.enabled && isSessionSampled(this._config.replay.sampleRate)) {
+        this._startReplay();
+      }
     }
     if (this._config.remoteConfig?.enabled) {
       this._remoteConfigManager = new RemoteConfigManager(
@@ -2199,8 +2231,61 @@ var _Apperio = class _Apperio {
       }
     }
   }
+  /**
+   * Ask the backend whether the project has replay turned on in the
+   * dashboard. The response is browser-cached for 5 minutes, so this is
+   * usually free after the first page load. A sampleRate set in code wins.
+   */
+  _followDashboardReplaySetting() {
+    const generation = this._replayGeneration;
+    fetch(`${this._config.endpoint}/sdk-config`, {
+      headers: { "X-API-Key": this._config.apiKey, Accept: "application/json" }
+    }).then((response) => response.ok ? response.json() : null).then((body) => {
+      const remote = body?.data?.replay;
+      if (!remote?.enabled || generation !== this._replayGeneration) return;
+      const sampleRate = this._codeReplay?.sampleRate ?? remote.sampleRate;
+      if (isSessionSampled(sampleRate)) this._startReplay();
+    }).catch(() => {
+    });
+  }
+  /**
+   * Load the recorder chunk (and rrweb) on demand. It is a dynamic import so
+   * bundlers split it out: sessions without replay never download it.
+   */
+  _startReplay() {
+    const generation = this._replayGeneration;
+    import('./replay-recorder.mjs').then(async ({ ReplayRecorder }) => {
+      if (generation !== this._replayGeneration) return;
+      const recorder = new ReplayRecorder({
+        maskAllInputs: this._config.replay.maskAllInputs,
+        transport: {
+          url: `${this._config.endpoint}/${this._config.projectId}/replay`,
+          headers: this._headers,
+          getSessionId,
+          nextSegmentIndex: nextReplaySegmentIndex
+        }
+      });
+      await recorder.start();
+      if (generation !== this._replayGeneration) {
+        recorder.stop();
+        return;
+      }
+      this._replayRecorder = recorder;
+    }).catch((error) => {
+      console.warn("Apperio: Session replay failed to start.", error);
+    });
+  }
+  /** True once the replay recorder has loaded and is recording */
+  isReplayRecording() {
+    return this._replayRecorder?.isRecording ?? false;
+  }
   async shutdown() {
     this._isShuttingDown = true;
+    this._replayGeneration++;
+    if (this._replayRecorder) {
+      this._replayRecorder.stop();
+      this._replayRecorder = null;
+    }
     if (this._flushTimer) {
       clearInterval(this._flushTimer);
       this._flushTimer = null;

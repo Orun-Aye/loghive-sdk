@@ -5,6 +5,7 @@ import { LoggerConfig } from './types';
 export { Apperio } from './logger';
 export {
   LoggerConfig,
+  ReplayOptions,
   LogEntry,
   LogLevel,
   PerformanceEntry,

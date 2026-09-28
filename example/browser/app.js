@@ -32,6 +32,8 @@ function saveConfig(cfg) {
 /* ------------------------------------------------------------------ */
 
 const captured = [];
+const replaySegments = [];
+window.__apperioReplaySegments = replaySegments;
 const nativeFetch = window.fetch.bind(window);
 
 window.fetch = async function (input, init) {
@@ -46,6 +48,16 @@ window.fetch = async function (input, init) {
       renderFeed();
     } catch {
       /* not JSON we understand: leave it alone */
+    }
+  }
+
+  // Replay segments: keep the raw payloads for the console
+  // (__apperioReplaySegments) instead of cluttering the log feed.
+  if (method === "POST" && /\/replay$/.test(url || "")) {
+    try {
+      replaySegments.push(JSON.parse(init.body));
+    } catch {
+      /* ignore */
     }
   }
 
@@ -85,6 +97,8 @@ if (cfg.apiKey && cfg.projectId) {
       consoleMessages: true,
       pageViews: true,
     },
+    // No `replay` option on purpose: the example follows the project's
+    // Settings > Session Replay switch in the dashboard, like a real app would.
   });
 
   window.__apperio = logger;
@@ -152,11 +166,13 @@ function pageContent() {
           <div class="field"><label for="email">Email</label><input id="email" value="ada@example.com"></div>
           <div class="field"><label for="card">Card number</label><input id="card" value="4111 1111 1111 1111"></div>
           <div class="field"><label for="pw">Password</label><input id="pw" type="password" value="hunter2"></div>
+          <div class="field"><label>Shipping to</label><div class="apperio-mask" id="address">Ada Lovelace, 12 St James's Square, London</div></div>
         </div>
         <div class="row">
           <button class="primary" data-act="submit">Submit order</button>
           <button class="danger" data-act="throw">Break checkout (uncaught)</button>
         </div>
+        <div class="hint">Session replay follows your project's <b>Settings &rsaquo; Session Replay</b> switch in the dashboard (set it to 100% to record every visit). Everything typed into these fields is recorded as asterisks, and so is the <code>.apperio-mask</code> address. A segment is uploaded every 10 seconds or 200 events. Run <code>__apperioReplaySegments</code> in the console to read the raw payloads.</div>
         <div class="hint">The <b>Break checkout</b> button is the one to use for task A3. Click it once, reload the page, click it again, reload, click a third time. That is three errors from three sessions.</div>
       </div>
       ${verifyCard()}`;

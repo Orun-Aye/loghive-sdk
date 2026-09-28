@@ -353,6 +353,39 @@ describe("AutoInstrumentation", () => {
     });
   });
 
+  describe("Performance Capture", () => {
+    it("ignores the SDK's own uploads but logs other resources", () => {
+      type Callback = (list: { getEntries: () => any[] }) => void;
+      // Web Vitals create observers too; keep the one watching resources
+      let callback: Callback = () => {};
+      vi.stubGlobal(
+        "PerformanceObserver",
+        class {
+          constructor(private cb: Callback) {}
+          observe(options: { entryTypes?: string[] }) {
+            if (options?.entryTypes?.includes("resource")) callback = this.cb;
+          }
+          disconnect() {}
+        }
+      );
+
+      autoInstrumentation.init({ performance: true } as any);
+      const resource = (name: string) => ({ name, entryType: "resource", startTime: 0, duration: 5 });
+      callback({
+        getEntries: () => [
+          resource(`${logger.getEndpoint()}/test-project-id/logs/batch`),
+          resource(`${logger.getEndpoint()}/test-project-id/replay`),
+          resource("https://cdn.example/app.js"),
+        ],
+      });
+
+      const logged = logSpy.mock.calls
+        .map((c) => (c[3] as any)?.performance?.name)
+        .filter(Boolean);
+      expect(logged).toEqual(["https://cdn.example/app.js"]);
+    });
+  });
+
   describe("Network Capture - Fetch", () => {
     let originalFetch: typeof fetch;
 

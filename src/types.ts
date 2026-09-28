@@ -65,10 +65,27 @@ export interface LoggerConfig {
     /** Automatically create spans for network requests. @default false */
     autoTraceNetworkRequests?: boolean;
   };
+  /**
+   * Session replay (browser only). Off by default. When enabled, the rrweb
+   * recorder is downloaded on demand, so it costs nothing when off.
+   */
+  replay?: ReplayOptions;
   /** Enable client-side error pattern detection. @default true */
   enablePatternDetection?: boolean;
   /** Callback invoked when a pattern is detected (recurring error or error spike). */
   onPatternDetected?: (pattern: { type: string; message: string; count: number; windowMs: number; detectedAt: string }) => void;
+}
+
+export interface ReplayOptions {
+  /** Record sessions. @default false */
+  enabled?: boolean;
+  /** Fraction of sessions to record, from 0 to 1. @default 0.1 */
+  sampleRate?: number;
+  /**
+   * Replace every input, textarea and select value with asterisks.
+   * Password fields are masked even when this is false. @default true
+   */
+  maskAllInputs?: boolean;
 }
 
 export interface LogEntry {

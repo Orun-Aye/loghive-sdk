@@ -202,6 +202,11 @@ interface LoggerConfig {
         /** Automatically create spans for network requests. @default false */
         autoTraceNetworkRequests?: boolean;
     };
+    /**
+     * Session replay (browser only). Off by default. When enabled, the rrweb
+     * recorder is downloaded on demand, so it costs nothing when off.
+     */
+    replay?: ReplayOptions;
     /** Enable client-side error pattern detection. @default true */
     enablePatternDetection?: boolean;
     /** Callback invoked when a pattern is detected (recurring error or error spike). */
@@ -212,6 +217,17 @@ interface LoggerConfig {
         windowMs: number;
         detectedAt: string;
     }) => void;
+}
+interface ReplayOptions {
+    /** Record sessions. @default false */
+    enabled?: boolean;
+    /** Fraction of sessions to record, from 0 to 1. @default 0.1 */
+    sampleRate?: number;
+    /**
+     * Replace every input, textarea and select value with asterisks.
+     * Password fields are masked even when this is false. @default true
+     */
+    maskAllInputs?: boolean;
 }
 interface LogEntry {
     projectId: string;
@@ -514,6 +530,11 @@ declare class Apperio {
     private _remoteConfigManager;
     private _traceContextManager;
     private _patternDetector;
+    private _replayRecorder;
+    /** Bumped on shutdown so a recorder that finishes loading late is discarded */
+    private _replayGeneration;
+    /** Replay options exactly as the app passed them, before defaults */
+    private _codeReplay;
     private _lastTimestamp;
     private _timestampCounter;
     constructor(config: LoggerConfig);
@@ -547,6 +568,19 @@ declare class Apperio {
     getCurrentTrace(): TraceContext | null;
     createChildSpan(name: string): Span | null;
     private _applyRemoteConfig;
+    /**
+     * Ask the backend whether the project has replay turned on in the
+     * dashboard. The response is browser-cached for 5 minutes, so this is
+     * usually free after the first page load. A sampleRate set in code wins.
+     */
+    private _followDashboardReplaySetting;
+    /**
+     * Load the recorder chunk (and rrweb) on demand. It is a dynamic import so
+     * bundlers split it out: sessions without replay never download it.
+     */
+    private _startReplay;
+    /** True once the replay recorder has loaded and is recording */
+    isReplayRecording(): boolean;
     shutdown(): Promise<void>;
 }
 
@@ -970,4 +1004,4 @@ declare class PatternDetector {
 
 declare const createLogger: (config: LoggerConfig) => Apperio;
 
-export { Apperio, type AuditEntry, AutoInstrumentation, type Breadcrumb, BreadcrumbManager, CircuitBreaker, type CircuitBreakerConfig, CircuitBreakerState, type CompressionResult, DataSanitizer, type DetectedPattern, type EnvironmentSnapshot, type HealthMetrics, HealthMetricsCollector, type LogEntry, LogLevel, type LoggerConfig, type NetworkRequest, OfflineManager, type OfflineManagerConfig, PII_PATTERNS, PatternDetector, type PerformanceEntry, RemoteConfigManager, type RemoteConfigOptions, type RemoteSDKConfig, type RetentionPolicy, SANITIZATION_PRESETS, type SanitizationConfig, type SanitizationRule, Span, type SpanData, type TraceContext, TraceContextManager, TracePropagator, type UserInteraction, compressPayload, createDataSanitizer, createLogger, getSessionId, preparePayloadForTransmission, uint8ArrayToBase64 };
+export { Apperio, type AuditEntry, AutoInstrumentation, type Breadcrumb, BreadcrumbManager, CircuitBreaker, type CircuitBreakerConfig, CircuitBreakerState, type CompressionResult, DataSanitizer, type DetectedPattern, type EnvironmentSnapshot, type HealthMetrics, HealthMetricsCollector, type LogEntry, LogLevel, type LoggerConfig, type NetworkRequest, OfflineManager, type OfflineManagerConfig, PII_PATTERNS, PatternDetector, type PerformanceEntry, RemoteConfigManager, type RemoteConfigOptions, type RemoteSDKConfig, type ReplayOptions, type RetentionPolicy, SANITIZATION_PRESETS, type SanitizationConfig, type SanitizationRule, Span, type SpanData, type TraceContext, TraceContextManager, TracePropagator, type UserInteraction, compressPayload, createDataSanitizer, createLogger, getSessionId, preparePayloadForTransmission, uint8ArrayToBase64 };

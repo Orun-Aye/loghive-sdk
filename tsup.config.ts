@@ -1,10 +1,30 @@
 // tsup.config.ts
 
 import { defineConfig } from "tsup";
+import type { Plugin } from "esbuild";
+
+/**
+ * Keep the replay recorder out of the core bundle. logger.ts loads it with
+ * `import('./replay-recorder')`; this plugin leaves that import unbundled and
+ * points it at the recorder's own output file (dist/replay-recorder.mjs|cjs),
+ * so the recorder and rrweb are only downloaded when replay is enabled.
+ */
+const externalReplayRecorder: Plugin = {
+  name: "external-replay-recorder",
+  setup(build) {
+    // Match the extension tsup gives this build (see outExtension below)
+    const ext = build.initialOptions.outExtension?.[".js"] ?? ".mjs";
+    build.onResolve({ filter: /^\.\/replay-recorder$/ }, (args) =>
+      args.kind === "dynamic-import"
+        ? { path: `./replay-recorder${ext}`, external: true }
+        : undefined
+    );
+  },
+};
 
 export default defineConfig({
-  // Entry points
-  entry: ["src/index.ts"],
+  // Entry points. The replay recorder is its own entry, loaded lazily by the core
+  entry: ["src/index.ts", "src/replay-recorder.ts"],
 
   // Output formats: CommonJS and ESM
   format: ["cjs", "esm"],
@@ -13,7 +33,7 @@ export default defineConfig({
   outDir: "dist",
 
   // Generate TypeScript declaration files
-  dts: true,
+  dts: { entry: "src/index.ts" },
 
   // Generate source maps for debugging
   sourcemap: true,
@@ -24,8 +44,8 @@ export default defineConfig({
   // Minify output (optional, can enable for production)
   minify: false,
 
-  // Split output into chunks (better for tree-shaking)
-  splitting: true,
+  // No shared chunks: the core entry must stay a single self-contained file
+  splitting: false,
 
   // Tree-shakeable ESM exports
   treeshake: true,
@@ -37,7 +57,7 @@ export default defineConfig({
   platform: "neutral", // Works in both browser and Node.js
 
   // External dependencies (don't bundle)
-  external: ["dotenv"],
+  external: ["dotenv", "rrweb"],
 
   // Bundle size analysis (optional)
   metafile: true,
@@ -67,8 +87,5 @@ export default defineConfig({
   // Preserve directory structure
   shims: false,
 
-  // Code splitting for better tree-shaking
-  esbuildOptions(options) {
-    options.chunkNames = "chunks/[name]-[hash]";
-  },
+  esbuildPlugins: [externalReplayRecorder],
 });

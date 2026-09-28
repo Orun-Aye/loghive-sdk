@@ -264,6 +264,8 @@ describe("Apperio Logger", () => {
         projectId: "test-project-id",
         batchSize: 5,
         flushIntervalMs: 10000,
+        // Decided in code, so no dashboard-setting request joins the fetch count
+        replay: { enabled: false },
         autoCapture: {
           errors: false,
           performance: false,
@@ -392,6 +394,8 @@ describe("Apperio Logger", () => {
         batchSize: 1,
         maxRetries: 3,
         retryDelayMs: 1000,
+        // Decided in code, so no dashboard-setting request joins the fetch count
+        replay: { enabled: false },
         flushIntervalMs: 999999, // Very high to prevent interval from interfering
         autoCapture: {
           errors: false,

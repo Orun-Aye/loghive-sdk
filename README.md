@@ -45,6 +45,7 @@ That's it. Three lines of code and your app is sending logs to the Apperio dashb
 - [Data Sanitization (PII Protection)](#data-sanitization-pii-protection)
 - [Offline Support](#offline-support)
 - [Distributed Tracing](#distributed-tracing)
+- [Session Replay](#session-replay)
 - [Pattern Detection](#pattern-detection)
 - [Remote Configuration](#remote-configuration)
 - [Framework Guides](#framework-guides)
@@ -218,6 +219,13 @@ const logger = new Apperio({
   // --- Distributed Tracing ---
   tracing: {
     enabled: false,             // Enable trace context propagation. Default: false
+  },
+
+  // --- Session Replay (browser only) ---
+  replay: {
+    enabled: false,             // Record sessions with rrweb. Omit to follow the dashboard switch
+    sampleRate: 0.1,            // Fraction of sessions to record, 0 to 1. Omit to follow the dashboard
+    maskAllInputs: true,        // Record input values as asterisks. Passwords always are. Default: true
   },
 
   // --- Remote Configuration ---
@@ -624,6 +632,53 @@ When tracing is active, every log entry includes `traceId` and `spanId` fields. 
 
 ---
 
+## Session Replay
+
+Session replay records what happened on the page (DOM changes, clicks, scrolls) using [rrweb](https://github.com/rrweb-io/rrweb), so you can watch a session back. It is **off by default** and only runs in the browser.
+
+**Turn it on from the dashboard** under your project's **Settings > Session Replay**. No code change needed: when your code doesn't set `replay.enabled`, the SDK asks the backend for the project's setting once per page load (browser-cached for 5 minutes, so a change reaches visitors within 5 minutes). If that request fails, nothing is recorded.
+
+**Or decide it in code.** A `replay.enabled` or `replay.sampleRate` set in code always wins over the dashboard for that setting:
+
+```typescript
+const logger = new Apperio({
+  apiKey: '...',
+  projectId: '...',
+  replay: {
+    enabled: true,
+    sampleRate: 0.1, // record 10% of sessions
+  },
+});
+```
+
+**It costs nothing when off.** The recorder and rrweb are not part of the main bundle. They are loaded with a dynamic `import()` only when `replay.enabled` is `true` and the session is sampled in, so your bundler puts them in a separate chunk that most visitors never download.
+
+**Sampling** is decided once per session. Re-initializing the logger on the same page never flips the decision.
+
+### Privacy masking
+
+Masking happens in the browser, before an event is recorded, so the real values never leave the page.
+
+- **Inputs are masked by default.** Every `input`, `textarea` and `select` value is recorded as asterisks, one per character. That covers what users type and values already on the page.
+- **Passwords are always masked**, even if you set `replay.maskAllInputs: false`.
+- **Mask anything else with `.apperio-mask`.** Text inside an element with this class, including nested elements and text added later, is recorded as asterisks.
+
+```html
+<div class="apperio-mask">Ada Lovelace, 12 St James's Square</div>
+```
+
+To record non-password inputs in plain text (for example, a search box on a public site):
+
+```typescript
+replay: { enabled: true, maskAllInputs: false }
+```
+
+**What `.apperio-mask` does not cover:** it masks text content, not attributes. Keep sensitive data out of `placeholder`, `title`, `alt` and `aria-label`. Text typed into a `contenteditable` element is page text, not an input value, so put `.apperio-mask` on the editable element.
+
+**Uploads** happen in segments: one every 10 seconds while something is happening, or sooner once a segment holds 200 events. An idle page sends nothing. The last segment is sent when the page is hidden or unloaded. Each segment carries the same `sessionId` as your logs, so a replay lines up with the errors from that session.
+
+---
+
 ## Pattern Detection
 
 The SDK automatically watches for error patterns on the client side. No server calls required — it runs entirely in the browser.
@@ -981,6 +1036,7 @@ process.on('SIGINT', async () => {
 | `sanitization` | `object` | `{ enabled: true }` | PII sanitization config |
 | `offline` | `OfflineManagerConfig` | `{}` | Offline queue config |
 | `tracing` | `object` | `{ enabled: false }` | Distributed tracing config |
+| `replay` | `ReplayOptions` | `{ enabled: false, sampleRate: 0.1, maskAllInputs: true }` | Session replay (browser only, lazy loaded) |
 | `remoteConfig` | `RemoteConfigOptions` | `{}` | Remote config fetching |
 | `enablePatternDetection` | `boolean` | `true` | Client-side pattern detection |
 
