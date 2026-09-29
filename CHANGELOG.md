@@ -4,7 +4,26 @@ All notable changes to the `apperio` SDK. This project follows [Semantic Version
 
 Releases before 1.4.0 predate this file; see the git history for those.
 
+## [1.5.0] - 2026-09-29
+
+### Added
+
+- **Session replay.** Records DOM changes, clicks and scrolls with [rrweb](https://github.com/rrweb-io/rrweb) so a session can be watched back in the dashboard. Off by default and browser-only. Turn it on with `replay: { enabled, sampleRate, maskAllInputs }`, or leave `replay.enabled` unset and the SDK follows the project's dashboard setting. Code always wins over the dashboard. If the setting cannot be fetched, nothing is recorded.
+- **Privacy masking for replay.** Every input, textarea and select value is masked by default. Passwords are always masked, even with `maskAllInputs: false`. Text inside `.apperio-mask` is masked too, including nested and later-added text.
+- **`isReplayRecording()`** reports whether the recorder has loaded and is recording.
+
+### Changed
+
+- `rrweb` is now a dependency. It lives in a separate lazy-loaded entry (`dist/replay-recorder.*`) fetched with `import()` only when replay is on and the session is sampled in, so the core bundle carries only the loader.
+- Replay segments upload every 10 seconds or every 200 events, flush with `keepalive` when the page is hidden or unloaded, and carry the same `sessionId` as your logs.
+
+### Fixed
+
+- Performance capture no longer logs the SDK's own uploads, which could feed an endless log loop.
+
 ## [1.4.0] - 2026-09-12
+
+Tagged but never published to npm. These changes first ship in 1.5.0.
 
 ### Added
 
