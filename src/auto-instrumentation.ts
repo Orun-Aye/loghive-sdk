@@ -14,6 +14,28 @@ import {
 } from "./utils";
 import { BreadcrumbManager } from "./breadcrumb-manager";
 
+/**
+ * An Error for a failure that arrived without one (a cross-origin "Script
+ * error.", a rejected string). Its type is read from text like "Uncaught
+ * TypeError: ...", and its stack is cleared: a stack captured here would point
+ * at the SDK, not at the code that failed.
+ */
+function errorFromText(text: string): Error {
+  const match = /^(?:Uncaught\s+)?([A-Z][A-Za-z]*(?:Error|Exception)):\s*([\s\S]*)$/.exec(text);
+  const error = new Error(match ? match[2] : text);
+  if (match) error.name = match[1];
+  error.stack = undefined;
+  return error;
+}
+
+/** Log line for a captured error, e.g. "TypeError: Cannot read properties of undefined". */
+function describeError(error: Error, fallback = "Uncaught error"): string {
+  const name = error.name || "Error";
+  const message = (error.message || "").split("\n")[0];
+  if (!message) return name === "Error" ? fallback : name;
+  return message.startsWith(`${name}:`) ? message : `${name}: ${message}`;
+}
+
 export class AutoInstrumentation {
   private logger: Apperio;
   private originalFetch?: typeof fetch;
@@ -93,11 +115,24 @@ export class AutoInstrumentation {
   private setupErrorCapture(): void {
     // Global error handler
     this._errorHandler = (event: ErrorEvent) => {
-      const errorDetails = extractErrorDetails(event);
+      // Report the thrown error itself, not the event wrapping it: the event has
+      // no stack and a generic name, which merged every uncaught error into one
+      // "Uncaught Error" group. Cross-origin scripts give no error object, only
+      // a message, so build one and keep the location in `source`.
+      const error =
+        event.error instanceof Error
+          ? event.error
+          : errorFromText(event.message || "Script error");
+      const errorDetails = extractErrorDetails(error);
 
-      this.logger._log(LogLevel.ERROR, "Uncaught Error", undefined, {
+      this.logger._log(LogLevel.ERROR, describeError(error), error, {
         eventType: "error",
         error: errorDetails,
+        source: {
+          url: event.filename || undefined,
+          lineNumber: event.lineno || undefined,
+          columnNumber: event.colno || undefined,
+        },
         url: window.location.href,
         userAgent: navigator.userAgent,
         timestamp: Date.now(),
@@ -112,13 +147,13 @@ export class AutoInstrumentation {
       const error =
         event.reason instanceof Error
           ? event.reason
-          : new Error(String(event.reason));
+          : errorFromText(String(event.reason));
       const errorDetails = extractErrorDetails(error);
 
       this.logger._log(
         LogLevel.ERROR,
-        "Unhandled Promise Rejection",
-        undefined,
+        describeError(error, "Unhandled promise rejection"),
+        error,
         {
           eventType: "error",
           error: errorDetails,

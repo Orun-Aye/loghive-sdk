@@ -4,6 +4,14 @@ All notable changes to the `apperio` SDK. This project follows [Semantic Version
 
 Releases before 1.4.0 predate this file; see the git history for those.
 
+## [1.5.1] - 2026-10-08
+
+### Fixed
+
+- **Uncaught errors are reported as themselves.** Automatic error capture logged every uncaught exception with the fixed message "Uncaught Error", described the browser's `ErrorEvent` instead of the thrown error, and sent no stack trace. The dashboard therefore merged every uncaught error into one group, with no stack for suspect commits to match. Each one now arrives with its real type, message and stack, for example `TypeError: Cannot read properties of undefined (reading 'email')`, and the file, line and column it came from in `data.source`.
+- **Unhandled promise rejections** are logged with the rejection's own error and message instead of the fixed "Unhandled Promise Rejection" text.
+- Errors that arrive without an error object, such as a cross-origin "Script error." or a rejected string, keep the type named in their message (`Uncaught TypeError: ...` becomes a `TypeError`) and carry no stack. Before, they could carry one captured inside the SDK, pointing at the SDK instead of your code.
+
 ## [1.5.0] - 2026-09-29
 
 ### Added

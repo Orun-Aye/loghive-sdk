@@ -66,42 +66,90 @@ describe("AutoInstrumentation", () => {
   });
 
   describe("Error Capture", () => {
-    it("should capture uncaught errors via ErrorEvent", () => {
+    it("should report the thrown error itself, with its type, message and stack", () => {
       autoInstrumentation.init({ errors: true });
 
-      const errorEvent = new ErrorEvent("error", {
-        message: "Test uncaught error",
-        filename: "test.js",
-        lineno: 10,
-        colno: 5,
-      });
-      window.dispatchEvent(errorEvent);
+      const thrown = new TypeError(
+        "Cannot read properties of undefined (reading 'email')"
+      );
+      window.dispatchEvent(
+        new ErrorEvent("error", {
+          error: thrown,
+          message: `Uncaught ${thrown.name}: ${thrown.message}`,
+          filename: "https://shop.example/js/checkout.js",
+          lineno: 25,
+          colno: 25,
+        })
+      );
 
       expect(logSpy).toHaveBeenCalledWith(
         LogLevel.ERROR,
-        "Uncaught Error",
-        undefined,
+        "TypeError: Cannot read properties of undefined (reading 'email')",
+        thrown,
         expect.objectContaining({
           eventType: "error",
+          error: expect.objectContaining({
+            name: "TypeError",
+            message: "Cannot read properties of undefined (reading 'email')",
+            stack: thrown.stack,
+          }),
+          source: {
+            url: "https://shop.example/js/checkout.js",
+            lineNumber: 25,
+            columnNumber: 25,
+          },
         })
       );
     });
 
-    it("should capture unhandled promise rejections", () => {
+    it("should keep different uncaught errors apart", () => {
       autoInstrumentation.init({ errors: true });
 
+      window.dispatchEvent(new ErrorEvent("error", { error: new TypeError("a is undefined") }));
+      window.dispatchEvent(new ErrorEvent("error", { error: new RangeError("bad length") }));
+
+      const messages = logSpy.mock.calls.map((call) => call[1]);
+      expect(messages).toContain("TypeError: a is undefined");
+      expect(messages).toContain("RangeError: bad length");
+    });
+
+    it("should still report errors that carry no error object (cross-origin scripts)", () => {
+      autoInstrumentation.init({ errors: true });
+
+      window.dispatchEvent(
+        new ErrorEvent("error", {
+          message: "Script error.",
+          filename: "https://cdn.example/widget.js",
+          lineno: 1,
+          colno: 200,
+        })
+      );
+
+      expect(logSpy).toHaveBeenCalledWith(
+        LogLevel.ERROR,
+        "Error: Script error.",
+        expect.any(Error),
+        expect.objectContaining({
+          error: expect.objectContaining({ name: "Error", message: "Script error." }),
+          source: expect.objectContaining({ url: "https://cdn.example/widget.js", lineNumber: 1 }),
+        })
+      );
+    });
+
+    it("should capture unhandled promise rejections with the rejection's error", () => {
+      autoInstrumentation.init({ errors: true });
+
+      const reason = new Error("Promise failed");
       const rejectionEvent = new Event(
         "unhandledrejection"
       ) as PromiseRejectionEvent;
-      Object.defineProperty(rejectionEvent, "reason", {
-        value: new Error("Promise failed"),
-      });
+      Object.defineProperty(rejectionEvent, "reason", { value: reason });
       window.dispatchEvent(rejectionEvent);
 
       expect(logSpy).toHaveBeenCalledWith(
         LogLevel.ERROR,
-        "Unhandled Promise Rejection",
-        undefined,
+        "Error: Promise failed",
+        reason,
         expect.objectContaining({
           eventType: "error",
         })
@@ -121,8 +169,8 @@ describe("AutoInstrumentation", () => {
 
       expect(logSpy).toHaveBeenCalledWith(
         LogLevel.ERROR,
-        "Unhandled Promise Rejection",
-        undefined,
+        "Error: A string reason",
+        expect.any(Error),
         expect.objectContaining({
           eventType: "error",
           error: expect.objectContaining({
@@ -590,15 +638,19 @@ describe("AutoInstrumentation", () => {
       });
       window.dispatchEvent(errorEvent);
 
+      // No error object: the type is read from the message, and no stack is
+      // invented (one captured inside the SDK would point at the SDK)
       expect(logSpy).toHaveBeenCalledWith(
         LogLevel.ERROR,
-        "Uncaught Error",
-        undefined,
+        "TypeError: Cannot read property 'foo' of undefined",
+        expect.any(Error),
         expect.objectContaining({
           eventType: "error",
-          error: expect.objectContaining({
-            message: expect.stringContaining("TypeError"),
-          }),
+          error: {
+            name: "TypeError",
+            message: "Cannot read property 'foo' of undefined",
+          },
+          source: { url: "app.js", lineNumber: 42, columnNumber: 15 },
         })
       );
     });
