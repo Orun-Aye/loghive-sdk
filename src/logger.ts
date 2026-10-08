@@ -23,7 +23,8 @@ export class Apperio {
   private _headers: Record<string, string>;
   private _autoInstrumentation: AutoInstrumentation;
   private _dataSanitizer: DataSanitizer;
-  private _beforeUnloadHandler: (() => void) | null = null;
+  private _pageHideHandler: (() => void) | null = null;
+  private _visibilityHandler: (() => void) | null = null;
   private _offlineManager: OfflineManager | null = null;
   private _remoteConfigManager: RemoteConfigManager | null = null;
   private _traceContextManager: TraceContextManager | null = null;
@@ -141,11 +142,15 @@ export class Apperio {
         timestamp: new Date().toISOString(),
       });
 
-      // Add beforeunload handler to flush logs (store reference for cleanup)
-      this._beforeUnloadHandler = () => {
-        this.flush();
+      // Send what is buffered when the page goes away. pagehide covers
+      // navigation and the back/forward cache; a hidden tab covers mobile,
+      // where beforeunload and often pagehide never fire.
+      this._pageHideHandler = () => this._flushOnExit();
+      this._visibilityHandler = () => {
+        if (document.visibilityState === 'hidden') this._flushOnExit();
       };
-      window.addEventListener('beforeunload', this._beforeUnloadHandler);
+      window.addEventListener('pagehide', this._pageHideHandler);
+      document.addEventListener('visibilitychange', this._visibilityHandler);
     } else {
       // Add Node.js context
       this.setContext({
@@ -446,6 +451,53 @@ export class Apperio {
     }
   }
 
+  /**
+   * Keepalive request bodies share a 64KB budget per page, and the replay
+   * recorder may use part of it on the same exit, so logs stay well under it.
+   */
+  private static readonly EXIT_KEEPALIVE_BYTES = 40 * 1024;
+
+  /**
+   * Sends everything buffered while the page is going away. A normal fetch is
+   * cancelled when the page unloads, so this uses keepalive, which the browser
+   * finishes in the background. Runs synchronously, without retries (the page
+   * will not be around for them), and ignores an in-flight timed flush, whose
+   * logs are already on their way. Logs beyond the keepalive budget go in a
+   * plain request as a best effort.
+   */
+  private _flushOnExit(): void {
+    if (this._logBuffer.length === 0) return;
+    const logs = this._logBuffer;
+    this._logBuffer = [];
+
+    const url = `${this._config.endpoint}/${this._config.projectId}/logs/batch`;
+    const post = (batch: LogEntry[], keepalive: boolean) =>
+      fetch(url, {
+        method: 'POST',
+        headers: this._headers,
+        body: JSON.stringify({ logs: batch }),
+        keepalive,
+      }).catch(() => {
+        // Nothing to do: the page is unloading
+      });
+
+    const byteLength = (text: string) =>
+      typeof TextEncoder !== 'undefined' ? new TextEncoder().encode(text).length : text.length;
+
+    // Fill the keepalive request up to the budget, oldest logs first
+    const kept: LogEntry[] = [];
+    let used = 16; // {"logs":[]}
+    let i = 0;
+    for (; i < logs.length; i++) {
+      const size = byteLength(JSON.stringify(logs[i])) + 1;
+      if (used + size > Apperio.EXIT_KEEPALIVE_BYTES) break;
+      kept.push(logs[i]);
+      used += size;
+    }
+    if (kept.length > 0) post(kept, true);
+    if (i < logs.length) post(logs.slice(i), false);
+  }
+
   private async _sendLogs(logs: LogEntry[]): Promise<void> {
     if (logs.length === 0) {
       return;
@@ -668,10 +720,16 @@ export class Apperio {
       this._patternDetector = null;
     }
 
-    // Remove beforeunload handler
-    if (isInBrowser() && this._beforeUnloadHandler) {
-      window.removeEventListener('beforeunload', this._beforeUnloadHandler);
-      this._beforeUnloadHandler = null;
+    // Remove the page-exit handlers
+    if (isInBrowser()) {
+      if (this._pageHideHandler) {
+        window.removeEventListener('pagehide', this._pageHideHandler);
+        this._pageHideHandler = null;
+      }
+      if (this._visibilityHandler) {
+        document.removeEventListener('visibilitychange', this._visibilityHandler);
+        this._visibilityHandler = null;
+      }
     }
 
     console.log('Apperio: Shutting down. Flushing remaining logs...');

@@ -593,4 +593,76 @@ describe("Apperio Logger", () => {
       expect(buffer[0].context).toMatchObject({ userId: "123" });
     });
   });
+describe("Exit flush", () => {
+    const batchCalls = () =>
+      mockFetch.mock.calls.filter(([url]) => String(url).includes("/logs/batch"));
+    const sentLogs = (call: any[]) => JSON.parse(call[1].body).logs;
+
+    beforeEach(() => {
+      logger = new Apperio({
+        apiKey: "test-api-key",
+        projectId: "test-project-id",
+        batchSize: 1000,
+        autoCapture: { errors: false, performance: false, networkRequests: false, pageViews: false },
+      });
+    });
+
+    it("sends the buffer with keepalive when the page is hidden away", () => {
+      logger.info("last words");
+      window.dispatchEvent(new Event("pagehide"));
+
+      const calls = batchCalls();
+      expect(calls).toHaveLength(1);
+      expect(calls[0][1].keepalive).toBe(true);
+      expect(sentLogs(calls[0]).map((l: any) => l.message)).toEqual(["last words"]);
+      expect((logger as any)._logBuffer).toHaveLength(0);
+    });
+
+    it("also sends when the tab becomes hidden (mobile)", () => {
+      logger.info("backgrounded");
+      Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+      document.dispatchEvent(new Event("visibilitychange"));
+      Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+
+      expect(batchCalls()).toHaveLength(1);
+      expect(batchCalls()[0][1].keepalive).toBe(true);
+    });
+
+    it("sends even while a timed flush is in flight", () => {
+      (logger as any)._isFlushing = true;
+      logger.info("queued behind a flush");
+      window.dispatchEvent(new Event("pagehide"));
+
+      expect(batchCalls()).toHaveLength(1);
+    });
+
+    it("keeps the keepalive request under budget and sends the rest plainly", () => {
+      const big = "x".repeat(2000);
+      for (let i = 0; i < 40; i++) logger.info("log " + i, { big });
+      window.dispatchEvent(new Event("pagehide"));
+
+      const calls = batchCalls();
+      expect(calls).toHaveLength(2);
+      expect(calls[0][1].keepalive).toBe(true);
+      expect(new TextEncoder().encode(calls[0][1].body).length).toBeLessThanOrEqual(40 * 1024);
+      expect(calls[1][1].keepalive).toBe(false);
+      expect(sentLogs(calls[0]).length + sentLogs(calls[1]).length).toBe(40);
+    });
+
+    it("does nothing with an empty buffer", () => {
+      window.dispatchEvent(new Event("pagehide"));
+      expect(batchCalls()).toHaveLength(0);
+    });
+
+    it("stops listening after shutdown", async () => {
+      vi.spyOn(console, "log").mockImplementation(() => {});
+      vi.useRealTimers();
+      await logger.shutdown();
+      mockFetch.mockClear();
+
+      (logger as any)._logBuffer = [{ message: "late" }];
+      window.dispatchEvent(new Event("pagehide"));
+      expect(batchCalls()).toHaveLength(0);
+    });
+  });
 });
