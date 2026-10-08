@@ -227,6 +227,19 @@ var BreadcrumbManager = class {
 };
 
 // src/auto-instrumentation.ts
+function errorFromText(text) {
+  const match = /^(?:Uncaught\s+)?([A-Z][A-Za-z]*(?:Error|Exception)):\s*([\s\S]*)$/.exec(text);
+  const error = new Error(match ? match[2] : text);
+  if (match) error.name = match[1];
+  error.stack = void 0;
+  return error;
+}
+function describeError(error, fallback = "Uncaught error") {
+  const name = error.name || "Error";
+  const message = (error.message || "").split("\n")[0];
+  if (!message) return name === "Error" ? fallback : name;
+  return message.startsWith(`${name}:`) ? message : `${name}: ${message}`;
+}
 var AutoInstrumentation = class {
   constructor(logger) {
     this.webVitalObservers = [];
@@ -265,10 +278,16 @@ var AutoInstrumentation = class {
   }
   setupErrorCapture() {
     this._errorHandler = (event) => {
-      const errorDetails = extractErrorDetails(event);
-      this.logger._log("error" /* ERROR */, "Uncaught Error", void 0, {
+      const error = event.error instanceof Error ? event.error : errorFromText(event.message || "Script error");
+      const errorDetails = extractErrorDetails(error);
+      this.logger._log("error" /* ERROR */, describeError(error), error, {
         eventType: "error",
         error: errorDetails,
+        source: {
+          url: event.filename || void 0,
+          lineNumber: event.lineno || void 0,
+          columnNumber: event.colno || void 0
+        },
         url: window.location.href,
         userAgent: navigator.userAgent,
         timestamp: Date.now(),
@@ -278,12 +297,12 @@ var AutoInstrumentation = class {
     };
     window.addEventListener("error", this._errorHandler);
     this._rejectionHandler = (event) => {
-      const error = event.reason instanceof Error ? event.reason : new Error(String(event.reason));
+      const error = event.reason instanceof Error ? event.reason : errorFromText(String(event.reason));
       const errorDetails = extractErrorDetails(error);
       this.logger._log(
         "error" /* ERROR */,
-        "Unhandled Promise Rejection",
-        void 0,
+        describeError(error, "Unhandled promise rejection"),
+        error,
         {
           eventType: "error",
           error: errorDetails,
