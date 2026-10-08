@@ -905,10 +905,13 @@ var PII_PATTERNS = [
     severity: "medium",
     category: "pii"
   },
-  // IP addresses
+  // IP addresses. The address must start the text, follow a character that is
+  // not a letter, digit, "." or "/", or follow "//" (a URL host). That keeps
+  // version numbers such as "Chrome/137.0.0.0" in user agents. Captured rather
+  // than a lookbehind, which Safari before 16.4 cannot parse.
   {
-    pattern: /\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b/g,
-    replacement: "[IP_REDACTED]",
+    pattern: /(^|[^\w./]|\/\/)((?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?))(?!\d|\.\d)/g,
+    replacement: "$1[IP_REDACTED]",
     description: "IP address redaction",
     severity: "medium",
     category: "pii"
@@ -1823,7 +1826,8 @@ var _Apperio = class _Apperio {
     this._isFlushing = false;
     this._isShuttingDown = false;
     this._initialized = false;
-    this._beforeUnloadHandler = null;
+    this._pageHideHandler = null;
+    this._visibilityHandler = null;
     this._offlineManager = null;
     this._remoteConfigManager = null;
     this._traceContextManager = null;
@@ -1915,10 +1919,12 @@ var _Apperio = class _Apperio {
         referrer: document.referrer,
         timestamp: (/* @__PURE__ */ new Date()).toISOString()
       });
-      this._beforeUnloadHandler = () => {
-        this.flush();
+      this._pageHideHandler = () => this._flushOnExit();
+      this._visibilityHandler = () => {
+        if (document.visibilityState === "hidden") this._flushOnExit();
       };
-      window.addEventListener("beforeunload", this._beforeUnloadHandler);
+      window.addEventListener("pagehide", this._pageHideHandler);
+      document.addEventListener("visibilitychange", this._visibilityHandler);
     } else {
       this.setContext({
         platform: process.platform,
@@ -2148,6 +2154,39 @@ var _Apperio = class _Apperio {
       this._isFlushing = false;
     }
   }
+  /**
+   * Sends everything buffered while the page is going away. A normal fetch is
+   * cancelled when the page unloads, so this uses keepalive, which the browser
+   * finishes in the background. Runs synchronously, without retries (the page
+   * will not be around for them), and ignores an in-flight timed flush, whose
+   * logs are already on their way. Logs beyond the keepalive budget go in a
+   * plain request as a best effort.
+   */
+  _flushOnExit() {
+    if (this._logBuffer.length === 0) return;
+    const logs = this._logBuffer;
+    this._logBuffer = [];
+    const url = `${this._config.endpoint}/${this._config.projectId}/logs/batch`;
+    const post = (batch, keepalive) => fetch(url, {
+      method: "POST",
+      headers: this._headers,
+      body: JSON.stringify({ logs: batch }),
+      keepalive
+    }).catch(() => {
+    });
+    const byteLength = (text) => typeof TextEncoder !== "undefined" ? new TextEncoder().encode(text).length : text.length;
+    const kept = [];
+    let used = 16;
+    let i = 0;
+    for (; i < logs.length; i++) {
+      const size = byteLength(JSON.stringify(logs[i])) + 1;
+      if (used + size > _Apperio.EXIT_KEEPALIVE_BYTES) break;
+      kept.push(logs[i]);
+      used += size;
+    }
+    if (kept.length > 0) post(kept, true);
+    if (i < logs.length) post(logs.slice(i), false);
+  }
   async _sendLogs(logs) {
     if (logs.length === 0) {
       return;
@@ -2329,9 +2368,15 @@ var _Apperio = class _Apperio {
       this._patternDetector.reset();
       this._patternDetector = null;
     }
-    if (isInBrowser() && this._beforeUnloadHandler) {
-      window.removeEventListener("beforeunload", this._beforeUnloadHandler);
-      this._beforeUnloadHandler = null;
+    if (isInBrowser()) {
+      if (this._pageHideHandler) {
+        window.removeEventListener("pagehide", this._pageHideHandler);
+        this._pageHideHandler = null;
+      }
+      if (this._visibilityHandler) {
+        document.removeEventListener("visibilitychange", this._visibilityHandler);
+        this._visibilityHandler = null;
+      }
     }
     console.log("Apperio: Shutting down. Flushing remaining logs...");
     await this.flush();
@@ -2341,6 +2386,11 @@ var _Apperio = class _Apperio {
   }
 };
 _Apperio.MAX_BUFFER_SIZE = 1e3;
+/**
+ * Keepalive request bodies share a 64KB budget per page, and the replay
+ * recorder may use part of it on the same exit, so logs stay well under it.
+ */
+_Apperio.EXIT_KEEPALIVE_BYTES = 40 * 1024;
 var Apperio = _Apperio;
 
 // src/circuit-breaker.ts

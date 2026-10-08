@@ -1,6 +1,6 @@
 {
   "name": "apperio",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "description": "This is a Node.js SDK that sends metrics to the Apperio platform.",
   "main": "dist/index.cjs",
   "module": "dist/index.mjs",

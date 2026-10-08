@@ -525,7 +525,8 @@ declare class Apperio {
     private _headers;
     private _autoInstrumentation;
     private _dataSanitizer;
-    private _beforeUnloadHandler;
+    private _pageHideHandler;
+    private _visibilityHandler;
     private _offlineManager;
     private _remoteConfigManager;
     private _traceContextManager;
@@ -555,6 +556,20 @@ declare class Apperio {
     captureMessage(message: string, level?: LogLevel, context?: Record<string, any>): void;
     addBreadcrumb(message: string, category?: string, data?: Record<string, any>): void;
     flush(): Promise<void>;
+    /**
+     * Keepalive request bodies share a 64KB budget per page, and the replay
+     * recorder may use part of it on the same exit, so logs stay well under it.
+     */
+    private static readonly EXIT_KEEPALIVE_BYTES;
+    /**
+     * Sends everything buffered while the page is going away. A normal fetch is
+     * cancelled when the page unloads, so this uses keepalive, which the browser
+     * finishes in the background. Runs synchronously, without retries (the page
+     * will not be around for them), and ignores an in-flight timed flush, whose
+     * logs are already on their way. Logs beyond the keepalive budget go in a
+     * plain request as a best effort.
+     */
+    private _flushOnExit;
     private _sendLogs;
     getSanitizationConfig(): SanitizationConfig;
     updateSanitizationConfig(config: Partial<SanitizationConfig>): void;

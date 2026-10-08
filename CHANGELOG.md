@@ -4,6 +4,13 @@ All notable changes to the `apperio` SDK. This project follows [Semantic Version
 
 Releases before 1.4.0 predate this file; see the git history for those.
 
+## [1.5.2] - 2026-10-08
+
+### Fixed
+
+- **Logs from the last seconds of a visit are delivered.** Logs were flushed on `beforeunload` with a plain request, which browsers cancel when the tab closes, and which mobile browsers often never trigger. The SDK now flushes on `pagehide` and when the tab is hidden, using `keepalive` so the browser finishes the request after the page is gone. In Chrome, closing the tab right after logging lost the log with 1.5.1 and delivers it with 1.5.2.
+- **Browser versions are no longer redacted as IP addresses.** Chrome reports its version as four numbers (`Chrome/137.0.0.0`), which the IP rule replaced, garbling every Chrome user agent. Addresses in text, JSON, URLs and sentences are still redacted.
+
 ## [1.5.1] - 2026-10-08
 
 ### Fixed
