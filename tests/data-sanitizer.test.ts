@@ -159,6 +159,27 @@ describe("DataSanitizer", () => {
           expect(result.text).toBe(invalid);
         });
       });
+
+      it("should leave browser versions in user agents alone", () => {
+        // Chrome reports its version as four numbers that read like an IP
+        const ua =
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/137.0.0.0 Safari/537.36";
+        const result = sanitizeData(patternOnlySanitizer, { userAgent: ua });
+        expect(result.userAgent).toBe(ua);
+      });
+
+      it("should still redact addresses in text, JSON, URLs and at the end of a sentence", () => {
+        const cases: Record<string, string> = {
+          "request from 10.0.0.12 failed": "request from [IP_REDACTED] failed",
+          '{"ip":"192.168.1.20"}': '{"ip":"[IP_REDACTED]"}',
+          "GET http://172.16.0.5:8080/health": "GET http://[IP_REDACTED]:8080/health",
+          "blocked 203.0.113.9.": "blocked [IP_REDACTED].",
+          "x-forwarded-for=8.8.8.8": "x-forwarded-for=[IP_REDACTED]",
+        };
+        for (const [input, expected] of Object.entries(cases)) {
+          expect(sanitizeData(patternOnlySanitizer, { text: input }).text).toBe(expected);
+        }
+      });
     });
 
     describe("JWT Token Detection", () => {

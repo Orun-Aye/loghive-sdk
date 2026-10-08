@@ -79,10 +79,13 @@ export const PII_PATTERNS: SanitizationRule[] = [
     category: 'pii'
   },
   
-  // IP addresses
+  // IP addresses. The address must start the text, follow a character that is
+  // not a letter, digit, "." or "/", or follow "//" (a URL host). That keeps
+  // version numbers such as "Chrome/137.0.0.0" in user agents. Captured rather
+  // than a lookbehind, which Safari before 16.4 cannot parse.
   {
-    pattern: /\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b/g,
-    replacement: '[IP_REDACTED]',
+    pattern: /(^|[^\w./]|\/\/)((?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?))(?!\d|\.\d)/g,
+    replacement: '$1[IP_REDACTED]',
     description: 'IP address redaction',
     severity: 'medium',
     category: 'pii'
